@@ -91,25 +91,37 @@ def price_calculator(expression: str) -> str:
 
     # --- Compare price/performance ---
     # Format: "15990000/8 vs 22990000/16"  (price/score vs price/score)
+    # hoặc: "15990000 vs 22990000" (chỉ so sánh giá)
     if " vs " in expr:
         try:
             parts = expr.split(" vs ")
             def parse_ratio(s):
                 s = s.strip().replace(",", "")
                 if "/" in s:
-                    a, b = s.split("/")
+                    a, b = s.split("/", 1)
                     return float(a), float(b)
-                raise ValueError("Expected format price/score")
+                # Không có score → chỉ so sánh giá thuần
+                return float(s), None
             p1, s1 = parse_ratio(parts[0])
             p2, s2 = parse_ratio(parts[1])
-            ratio1 = p1 / s1
-            ratio2 = p2 / s2
-            better = "Product A" if ratio1 < ratio2 else "Product B"
-            return (
-                f"Product A: {p1:,.0f}đ / {s1} = {ratio1:,.0f}đ per unit\n"
-                f"Product B: {p2:,.0f}đ / {s2} = {ratio2:,.0f}đ per unit\n"
-                f"Better value: {better}"
-            )
+            if s1 is not None and s2 is not None:
+                ratio1 = p1 / s1
+                ratio2 = p2 / s2
+                better = "Product A" if ratio1 < ratio2 else "Product B"
+                return (
+                    f"Product A: {p1:,.0f}đ / {s1} = {ratio1:,.0f}đ per unit\n"
+                    f"Product B: {p2:,.0f}đ / {s2} = {ratio2:,.0f}đ per unit\n"
+                    f"Better value: {better}"
+                )
+            else:
+                cheaper = "Product A" if p1 < p2 else "Product B"
+                diff = abs(p1 - p2)
+                return (
+                    f"Product A: {p1:,.0f}đ\n"
+                    f"Product B: {p2:,.0f}đ\n"
+                    f"Cheaper: {cheaper} (difference: {diff:,.0f}đ)\n"
+                    f"Tip: Use '15990000/8 vs 22990000/16' to compare price per unit"
+                )
         except Exception as e:
             return f"Error comparing: {e}. Format: '15990000/8 vs 22990000/16'"
 
