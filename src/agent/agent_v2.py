@@ -7,12 +7,8 @@ from src.telemetry.metrics import tracker
 
 class ReActAgentV2:
     """
-    Agent v2: Improved ReAct Agent with:
-    - Few-shot examples in the system prompt to reduce hallucination
-    - Better action parsing (handles extra whitespace, quotes, multi-word args)
-    - Retry on parse errors with clearer feedback
-    - Guardrail: detects hallucinated tool names early
-    - Conversation history passed as structured messages
+    Agent v2: Improved ReAct Agent with few-shot examples, better parsing,
+    hallucination guardrails, and retry logic.
     """
 
     def __init__(self, llm: LLMProvider, tools: List[Dict[str, Any]], max_steps: int = 7):
@@ -20,6 +16,7 @@ class ReActAgentV2:
         self.tools = {t["name"]: t for t in tools}
         self.max_steps = max_steps
         self.max_parse_retries = 2
+        self.trace = []
 
     def get_system_prompt(self) -> str:
         tool_descriptions = "\n".join(
@@ -75,8 +72,16 @@ Thought: I now have all the information needed.
 Final Answer: The weather in Hanoi is Sunny at 32°C with 70% humidity, and 25 × 4 = 100.
 """
 
-    def run(self, user_input: str) -> str:
+    def _emit(self, entry: dict, on_step=None):
+        self.trace.append(entry)
+        if on_step:
+            on_step(list(self.trace))
+
+    def run(self, user_input: str, on_step=None) -> str:
         logger.log_event("AGENT_V2_START", {"input": user_input, "model": self.llm.model_name})
+
+        self.trace = []
+        self._emit({"type": "input", "content": user_input}, on_step)
 
         history = [f"User question: {user_input}"]
         steps = 0
@@ -104,44 +109,61 @@ Final Answer: The weather in Hanoi is Sunny at 32°C with 70% humidity, and 25 �
                 latency_ms=latency,
             )
 
-            logger.log_event("AGENT_V2_STEP", {
-                "step": steps,
-                "llm_output": content[:500],
-            })
+            logger.log_event("AGENT_V2_STEP", {"step": steps, "llm_output": content[:500]})
+
+            thought_text = ""
+            if "Thought:" in content:
+                thought_text = content.split("Thought:")[-1].split("Action:")[0].split("Final Answer:")[0].strip()
 
             # --- Check for Final Answer ---
             final_match = re.search(r"Final Answer:\s*(.+)", content, re.DOTALL)
             if final_match:
                 answer = final_match.group(1).strip()
-                logger.log_event("AGENT_V2_END", {
-                    "steps": steps,
-                    "status": "success",
-                    "total_tokens": total_tokens,
+                self._emit({
+                    "type": "thought", "step": steps,
+                    "content": thought_text,
+                    "tokens": dict(usage), "latency_ms": latency,
+                }, on_step)
+                self._emit({
+                    "type": "final_answer", "step": steps,
+                    "content": answer,
+                    "total_tokens": dict(total_tokens),
                     "total_latency_ms": total_latency,
+                    "status": "success",
+                }, on_step)
+                logger.log_event("AGENT_V2_END", {
+                    "steps": steps, "status": "success",
+                    "total_tokens": total_tokens, "total_latency_ms": total_latency,
                 })
                 return answer
 
-            # --- Parse Action (improved regex) ---
-            # Handles: Action: tool(arg), Action: tool("arg"), Action: tool('arg with spaces')
+            # --- Parse Action ---
             action_match = re.search(
-                r"Action:\s*(\w+)\(\s*[\"']?(.*?)[\"']?\s*\)",
-                content,
-                re.DOTALL,
+                r"Action:\s*(\w+)\(\s*[\"']?(.*?)[\"']?\s*\)", content, re.DOTALL,
             )
 
             if not action_match:
                 parse_retries += 1
+                self._emit({
+                    "type": "error", "step": steps,
+                    "error_type": "parse_error",
+                    "content": content[:200],
+                    "tokens": dict(usage), "latency_ms": latency,
+                }, on_step)
                 logger.log_event("AGENT_V2_PARSE_ERROR", {
-                    "step": steps,
-                    "retry": parse_retries,
-                    "raw_output": content[:300],
+                    "step": steps, "retry": parse_retries, "raw_output": content[:300],
                 })
                 if parse_retries > self.max_parse_retries:
-                    logger.log_event("AGENT_V2_END", {
-                        "steps": steps,
-                        "status": "parse_error_exceeded",
-                        "total_tokens": total_tokens,
+                    self._emit({
+                        "type": "final_answer", "step": steps,
+                        "content": "Parse error exceeded",
+                        "total_tokens": dict(total_tokens),
                         "total_latency_ms": total_latency,
+                        "status": "parse_error_exceeded",
+                    }, on_step)
+                    logger.log_event("AGENT_V2_END", {
+                        "steps": steps, "status": "parse_error_exceeded",
+                        "total_tokens": total_tokens, "total_latency_ms": total_latency,
                     })
                     return "I encountered repeated formatting errors and could not complete the task."
 
@@ -157,11 +179,16 @@ Final Answer: The weather in Hanoi is Sunny at 32°C with 70% humidity, and 25 �
             tool_name = action_match.group(1).strip()
             tool_arg = action_match.group(2).strip()
 
-            # --- Guardrail: hallucinated tool name ---
+            # --- Guardrail: hallucinated tool ---
             if tool_name not in self.tools:
+                self._emit({
+                    "type": "error", "step": steps,
+                    "error_type": "hallucination",
+                    "content": f"Hallucinated tool: {tool_name}",
+                    "tokens": dict(usage), "latency_ms": latency,
+                }, on_step)
                 logger.log_event("AGENT_V2_HALLUCINATION", {
-                    "step": steps,
-                    "hallucinated_tool": tool_name,
+                    "step": steps, "hallucinated_tool": tool_name,
                 })
                 history.append(
                     f"Observation: ERROR — Tool '{tool_name}' does not exist.\n"
@@ -170,31 +197,42 @@ Final Answer: The weather in Hanoi is Sunny at 32°C with 70% humidity, and 25 �
                 )
                 continue
 
+            # --- Record thought ---
+            self._emit({
+                "type": "thought", "step": steps,
+                "content": thought_text,
+                "tokens": dict(usage), "latency_ms": latency,
+            }, on_step)
+
             # --- Execute tool ---
             observation = self._execute_tool(tool_name, tool_arg)
-            parse_retries = 0  # reset on successful parse
+            parse_retries = 0
+
+            self._emit({
+                "type": "action", "step": steps,
+                "tool": tool_name, "arg": tool_arg,
+                "observation": observation[:500],
+            }, on_step)
 
             logger.log_event("AGENT_V2_TOOL_CALL", {
-                "step": steps,
-                "tool": tool_name,
-                "arg": tool_arg,
-                "result": observation[:300],
+                "step": steps, "tool": tool_name,
+                "arg": tool_arg, "result": observation[:300],
             })
-
-            # Append structured history
-            thought_text = ""
-            if "Thought:" in content:
-                thought_text = content.split("Thought:")[-1].split("Action:")[0].strip()
 
             history.append(f"Thought: {thought_text}")
             history.append(f"Action: {tool_name}({tool_arg})")
             history.append(f"Observation: {observation}")
 
-        logger.log_event("AGENT_V2_END", {
-            "steps": steps,
-            "status": "max_steps_exceeded",
-            "total_tokens": total_tokens,
+        self._emit({
+            "type": "final_answer", "step": steps,
+            "content": "Max steps exceeded",
+            "total_tokens": dict(total_tokens),
             "total_latency_ms": total_latency,
+            "status": "max_steps_exceeded",
+        }, on_step)
+        logger.log_event("AGENT_V2_END", {
+            "steps": steps, "status": "max_steps_exceeded",
+            "total_tokens": total_tokens, "total_latency_ms": total_latency,
         })
         return "I reached the maximum number of reasoning steps without finding a complete answer."
 
