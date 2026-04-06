@@ -43,14 +43,25 @@ def analyze(events: list):
     agent_steps = []
     cost_by_provider = defaultdict(float)
     question_results = defaultdict(lambda: {"success": 0, "total": 0})
-    step_distributions = []   # số steps mỗi agent run
-    termination_status = defaultdict(int)  # success / max_steps_exceeded / etc.
+    step_distributions = []
+    termination_status = defaultdict(int)
+
+    # Chatbot vs Agent comparison
+    chatbot_metrics = {"latency": [], "tokens": [], "cost": []}
+    agent_metrics   = {"latency": [], "tokens": [], "cost": []}
+    _current_mode = {}  # track mode per session by start event
 
     for e in events:
         event_type = e.get("event", "")
         data = e.get("data", {})
 
-        if event_type == "LLM_METRIC":
+        if event_type == "CHATBOT_START":
+            _current_mode["mode"] = "chatbot"
+
+        elif event_type in ("AGENT_V1_START", "AGENT_V2_START"):
+            _current_mode["mode"] = "agent"
+
+        elif event_type == "LLM_METRIC":
             metrics["latency"].append(data.get("latency_ms", 0))
             metrics["prompt_tokens"].append(data.get("prompt_tokens", 0))
             metrics["completion_tokens"].append(data.get("completion_tokens", 0))
@@ -59,6 +70,16 @@ def analyze(events: list):
             metrics["cost"].append(cost)
             provider = data.get("provider", "unknown")
             cost_by_provider[provider] += cost
+            # Chatbot vs Agent
+            mode = _current_mode.get("mode", "unknown")
+            if mode == "chatbot":
+                chatbot_metrics["latency"].append(data.get("latency_ms", 0))
+                chatbot_metrics["tokens"].append(data.get("total_tokens", 0))
+                chatbot_metrics["cost"].append(cost)
+            elif mode == "agent":
+                agent_metrics["latency"].append(data.get("latency_ms", 0))
+                agent_metrics["tokens"].append(data.get("total_tokens", 0))
+                agent_metrics["cost"].append(cost)
 
         elif "PARSE_ERROR" in event_type:
             errors["parse_error"] += 1
@@ -148,6 +169,21 @@ def analyze(events: list):
         for q_type, counts in sorted(question_results.items()):
             rate = counts["success"] / counts["total"] * 100 if counts["total"] else 0
             print(f"  {q_type}: {counts['success']}/{counts['total']} ({rate:.1f}%)")
+
+    # --- Chatbot vs Agent comparison ---
+    if chatbot_metrics["latency"] or agent_metrics["latency"]:
+        print(f"\n{'='*60}")
+        print(f"CHATBOT vs AGENT COMPARISON")
+        print(f"{'='*60}")
+        def _avg(lst): return sum(lst) / len(lst) if lst else 0
+        header = f"  {'Metric':<25} {'Chatbot':>12} {'Agent':>12}"
+        print(header)
+        print(f"  {'-'*49}")
+        print(f"  {'Requests':<25} {len(chatbot_metrics['latency']):>12} {len(agent_metrics['latency']):>12}")
+        print(f"  {'Avg Latency (ms)':<25} {_avg(chatbot_metrics['latency']):>12.0f} {_avg(agent_metrics['latency']):>12.0f}")
+        print(f"  {'Avg Tokens':<25} {_avg(chatbot_metrics['tokens']):>12.0f} {_avg(agent_metrics['tokens']):>12.0f}")
+        print(f"  {'Total Cost ($)':<25} {sum(chatbot_metrics['cost']):>12.4f} {sum(agent_metrics['cost']):>12.4f}")
+        print(f"  {'Avg Cost/req ($)':<25} {_avg(chatbot_metrics['cost']):>12.4f} {_avg(agent_metrics['cost']):>12.4f}")
 
     print("=" * 60)
 
