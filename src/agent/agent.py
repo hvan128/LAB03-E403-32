@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict, Any, Callable, Optional
 from src.core.llm_provider import LLMProvider
+from src.core.scope_guard import build_out_of_scope_response, is_in_scope_query
 from src.telemetry.logger import logger
 from src.telemetry.metrics import tracker
 
@@ -20,7 +21,10 @@ class ReActAgent:
         tool_descriptions = "\n".join(
             f"- {name}: {t['description']}" for name, t in self.tools.items()
         )
-        return f"""You are an intelligent assistant that solves tasks step-by-step.
+        return f"""You are a product comparison assistant that solves shopping tasks step-by-step.
+
+You only support questions about phones, laptops, product specs, price comparison, discounts, and simple calculations.
+If the user asks about unrelated topics such as politics, war, weather, or general news, do not answer them and instead politely redirect back to product-related questions.
 
 You have access to the following tools:
 {tool_descriptions}
@@ -53,6 +57,23 @@ Rules:
 
         self.trace = []
         self._emit({"type": "input", "content": user_input}, on_step)
+
+        if not is_in_scope_query(user_input):
+            response = build_out_of_scope_response()
+            self._emit({
+                "type": "final_answer", "step": 0,
+                "content": response,
+                "total_tokens": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "total_latency_ms": 0,
+                "status": "out_of_scope",
+            }, on_step)
+            logger.log_event("AGENT_V1_SCOPE_GUARD", {"input": user_input, "status": "blocked"})
+            logger.log_event("AGENT_V1_END", {
+                "steps": 0, "status": "out_of_scope",
+                "total_tokens": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "total_latency_ms": 0,
+            })
+            return response
 
         prompt_parts = [f"User question: {user_input}"]
         steps = 0

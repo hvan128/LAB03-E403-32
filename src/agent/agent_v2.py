@@ -1,6 +1,7 @@
 import re
 from typing import List, Dict, Any, Callable, Optional
 from src.core.llm_provider import LLMProvider
+from src.core.scope_guard import build_out_of_scope_response, is_in_scope_query
 from src.telemetry.logger import logger
 from src.telemetry.metrics import tracker
 
@@ -25,7 +26,10 @@ class ReActAgentV2:
         )
         tool_names = ", ".join(self.tools.keys())
 
-        return f"""You are an intelligent assistant that solves tasks step-by-step using the ReAct framework.
+        return f"""You are a product comparison assistant that solves shopping tasks step-by-step using the ReAct framework.
+
+You only support questions about phones, laptops, product specs, discounts, price comparison, and simple calculations.
+If the user asks about unrelated topics such as politics, war, weather, or general news, politely refuse and redirect to product questions.
 
 ## Available Tools
 {tool_descriptions}
@@ -82,6 +86,23 @@ Final Answer: The weather in Hanoi is Sunny at 32Â°C with 70% humidity, and 25 Ã
 
         self.trace = []
         self._emit({"type": "input", "content": user_input}, on_step)
+
+        if not is_in_scope_query(user_input):
+            response = build_out_of_scope_response()
+            self._emit({
+                "type": "final_answer", "step": 0,
+                "content": response,
+                "total_tokens": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "total_latency_ms": 0,
+                "status": "out_of_scope",
+            }, on_step)
+            logger.log_event("AGENT_V2_SCOPE_GUARD", {"input": user_input, "status": "blocked"})
+            logger.log_event("AGENT_V2_END", {
+                "steps": 0, "status": "out_of_scope",
+                "total_tokens": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                "total_latency_ms": 0,
+            })
+            return response
 
         history = [f"User question: {user_input}"]
         steps = 0
