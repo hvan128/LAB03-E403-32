@@ -38,14 +38,11 @@ def parse_log_file(filepath: str) -> list:
 def analyze(events: list):
     """Phân tích danh sách events và in metrics."""
 
-    # TODO [Vương Trần]: Thêm metrics nếu cần
-    # - Cost breakdown theo provider
-    # - Token ratio (prompt vs completion)
-    # - Success rate theo loại câu hỏi
-
     metrics = defaultdict(list)
     errors = defaultdict(int)
     agent_steps = []
+    cost_by_provider = defaultdict(float)
+    question_results = defaultdict(lambda: {"success": 0, "total": 0})
 
     for e in events:
         event_type = e.get("event", "")
@@ -56,7 +53,10 @@ def analyze(events: list):
             metrics["prompt_tokens"].append(data.get("prompt_tokens", 0))
             metrics["completion_tokens"].append(data.get("completion_tokens", 0))
             metrics["total_tokens"].append(data.get("total_tokens", 0))
-            metrics["cost"].append(data.get("cost_estimate", 0))
+            cost = data.get("cost_estimate", 0)
+            metrics["cost"].append(cost)
+            provider = data.get("provider", "unknown")
+            cost_by_provider[provider] += cost
 
         elif "PARSE_ERROR" in event_type:
             errors["parse_error"] += 1
@@ -68,6 +68,10 @@ def analyze(events: list):
             agent_steps.append(data.get("steps", 0))
             if data.get("status") == "max_steps_exceeded":
                 errors["timeout"] += 1
+            q_type = data.get("question_type", "unknown")
+            question_results[q_type]["total"] += 1
+            if data.get("status") == "success":
+                question_results[q_type]["success"] += 1
 
     # Print results
     print("=" * 60)
@@ -98,6 +102,10 @@ def analyze(events: list):
     if metrics["cost"]:
         print(f"\n--- Cost ---")
         print(f"  Total estimated cost: ${sum(metrics['cost']):.4f}")
+        if cost_by_provider:
+            print(f"  Breakdown by provider:")
+            for provider, cost in sorted(cost_by_provider.items(), key=lambda x: -x[1]):
+                print(f"    {provider}: ${cost:.4f}")
 
     if agent_steps:
         print(f"\n--- Agent Steps ---")
@@ -112,6 +120,12 @@ def analyze(events: list):
     total_runs = len(agent_steps) if agent_steps else 1
     total_errors = sum(errors.values())
     print(f"  Error rate: {total_errors/total_runs*100:.1f}%")
+
+    if question_results:
+        print(f"\n--- Success Rate by Question Type ---")
+        for q_type, counts in sorted(question_results.items()):
+            rate = counts["success"] / counts["total"] * 100 if counts["total"] else 0
+            print(f"  {q_type}: {counts['success']}/{counts['total']} ({rate:.1f}%)")
 
     print("=" * 60)
 

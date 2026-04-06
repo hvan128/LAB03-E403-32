@@ -30,9 +30,55 @@ def price_calculator(expression: str) -> str:
     """
     expr = expression.strip().lower()
 
-    # TODO [Vương Trần]: Thêm các phép tính khác nếu cần
-    # - So sánh giá/hiệu năng 2 sản phẩm
-    # - Tính trả góp
+    # --- Installment (trả góp) ---
+    # Format: "22990000 installment 12 months 1.5%"
+    if "installment" in expr:
+        try:
+            parts = expr.split("installment")
+            price = float(parts[0].strip().replace(",", ""))
+            rest = parts[1].strip()
+            tokens = rest.split()
+            months = int(tokens[0])
+            monthly_rate = float(tokens[2].replace("%", "")) / 100 if len(tokens) >= 3 else 0.0
+            if monthly_rate == 0:
+                monthly_payment = price / months
+                total = price
+            else:
+                monthly_payment = price * monthly_rate * (1 + monthly_rate) ** months / ((1 + monthly_rate) ** months - 1)
+                total = monthly_payment * months
+            return (
+                f"Price: {price:,.0f}đ\n"
+                f"Term: {months} months @ {monthly_rate*100:.2f}%/month\n"
+                f"Monthly payment: {monthly_payment:,.0f}đ\n"
+                f"Total paid: {total:,.0f}đ\n"
+                f"Interest cost: {total - price:,.0f}đ"
+            )
+        except Exception as e:
+            return f"Error calculating installment: {e}. Format: '22990000 installment 12 months 1.5%'"
+
+    # --- Compare price/performance ---
+    # Format: "15990000/8 vs 22990000/16"  (price/score vs price/score)
+    if " vs " in expr:
+        try:
+            parts = expr.split(" vs ")
+            def parse_ratio(s):
+                s = s.strip().replace(",", "")
+                if "/" in s:
+                    a, b = s.split("/")
+                    return float(a), float(b)
+                raise ValueError("Expected format price/score")
+            p1, s1 = parse_ratio(parts[0])
+            p2, s2 = parse_ratio(parts[1])
+            ratio1 = p1 / s1
+            ratio2 = p2 / s2
+            better = "Product A" if ratio1 < ratio2 else "Product B"
+            return (
+                f"Product A: {p1:,.0f}đ / {s1} = {ratio1:,.0f}đ per unit\n"
+                f"Product B: {p2:,.0f}đ / {s2} = {ratio2:,.0f}đ per unit\n"
+                f"Better value: {better}"
+            )
+        except Exception as e:
+            return f"Error comparing: {e}. Format: '15990000/8 vs 22990000/16'"
 
     # --- Discount ---
     if "discount" in expr:
