@@ -13,9 +13,11 @@ import os
 import sys
 import argparse
 import json
+from pathlib import Path
 from dotenv import load_dotenv
 
-load_dotenv()
+PROJECT_ROOT = Path(__file__).resolve().parent
+load_dotenv(PROJECT_ROOT / ".env")
 
 from src.core.openai_provider import OpenAIProvider
 from src.core.gemini_provider import GeminiProvider
@@ -41,7 +43,11 @@ def create_llm():
         )
     elif provider == "local":
         from src.core.local_provider import LocalProvider
-        return LocalProvider(model_path=os.getenv("LOCAL_MODEL_PATH"))
+        model_path = os.getenv("LOCAL_MODEL_PATH", "./models/Phi-3-mini-4k-instruct-q4.gguf")
+        resolved_path = Path(model_path)
+        if not resolved_path.is_absolute():
+            resolved_path = PROJECT_ROOT / resolved_path
+        return LocalProvider(model_path=str(resolved_path))
     else:
         raise ValueError(f"Unknown provider: {provider}")
 
@@ -52,6 +58,10 @@ TEST_CASES = [
     "iPhone 15 có những thông số gì?",
     # Cần 1 tool
     "Tìm cho tôi các laptop có sẵn",
+    # Cần tool thời tiết
+    "Hôm nay thời tiết thế nào",
+    # Câu hỏi thời tiết khác
+    "Thời tiết hôm nay thế nào ?",
     # Cần product_compare
     "So sánh iPhone 15 và Samsung Galaxy S24",
     # Multi-step: search + price_calculator
