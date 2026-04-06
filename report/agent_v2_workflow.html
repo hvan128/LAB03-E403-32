@@ -1,0 +1,554 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Chatbot vs ReAct Agent V1 vs V2 - Workflow</title>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js"></script>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body {
+    font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+    background: #0f172a; color: #e2e8f0;
+    min-height: 100vh; padding: 30px 20px;
+    display: flex; flex-direction: column; align-items: center;
+  }
+  .page-title {
+    text-align: center; font-size: 32px; font-weight: 800;
+    background: linear-gradient(135deg, #818cf8, #c084fc, #f472b6);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+    margin-bottom: 6px;
+  }
+  .page-sub { text-align: center; color: #64748b; font-size: 14px; margin-bottom: 28px; }
+
+  .tabs { display: flex; justify-content: center; gap: 8px; margin-bottom: 24px; flex-wrap: wrap; }
+  .tab-btn {
+    padding: 10px 24px; border: 2px solid #334155; border-radius: 10px;
+    background: #1e293b; color: #94a3b8; font-size: 14px; font-weight: 600;
+    cursor: pointer; transition: all .2s;
+  }
+  .tab-btn:hover { border-color: #818cf8; color: #c4b5fd; }
+  .tab-btn.on-green  { background: #052e16; border-color: #4ade80; color: #bbf7d0; }
+  .tab-btn.on-blue   { background: #172554; border-color: #60a5fa; color: #bfdbfe; }
+  .tab-btn.on-purple { background: #312e81; border-color: #a78bfa; color: #e0e7ff; }
+  .tab-btn.on-pink   { background: #4a1942; border-color: #f472b6; color: #fce7f3; }
+
+  .panel { display: none; flex-direction: column; align-items: center; width: 100%; }
+  .panel.active { display: flex; }
+
+  .toolbar { display: flex; justify-content: center; margin-bottom: 16px; }
+  .btn-save {
+    background: linear-gradient(135deg, #6366f1, #8b5cf6); color: #fff; border: none;
+    padding: 10px 20px; border-radius: 10px; font-size: 14px; font-weight: 600;
+    cursor: pointer; box-shadow: 0 4px 16px rgba(99,102,241,.4);
+    transition: transform .15s; display: flex; align-items: center; gap: 8px;
+  }
+  .btn-save:hover { transform: translateY(-2px); }
+  .btn-save svg { width: 18px; height: 18px; }
+
+  .diagram { background: #0f172a; padding: 32px 24px 44px; max-width: 750px; width: 100%; }
+  .diagram.wide { max-width: 860px; }
+  .diagram h2 { text-align: center; font-size: 24px; font-weight: 700; margin-bottom: 4px; }
+  .diagram .sub { text-align: center; color: #94a3b8; font-size: 13px; margin-bottom: 28px; }
+  .c-green { color: #4ade80; } .c-blue { color: #60a5fa; } .c-purple { color: #a78bfa; }
+
+  .flow { display: flex; flex-direction: column; align-items: center; }
+
+  .node {
+    border-radius: 12px; padding: 14px 22px; text-align: center;
+    font-size: 14px; line-height: 1.5; width: 100%;
+  }
+  .n-start  { background: #065f46; border: 2px solid #34d399; color: #a7f3d0; font-weight: 600; border-radius: 30px; max-width: 240px; }
+  .n-end    { background: #7f1d1d; border: 2px solid #f87171; color: #fecaca; font-weight: 600; border-radius: 30px; max-width: 240px; }
+  .n-proc   { background: #1e293b; border: 2px solid #475569; max-width: 420px; }
+  .n-llm    { background: #1e1b4b; border: 2px solid #818cf8; max-width: 420px; }
+  .n-decide { background: #1e1b4b; border: 2px solid #818cf8; border-radius: 14px; max-width: 320px; }
+  .n-tool   { background: #172554; border: 2px solid #60a5fa; max-width: 440px; }
+  .n-err    { background: #451a03; border: 2px solid #fb923c; }
+  .n-ok     { background: #052e16; border: 2px solid #4ade80; }
+
+  .n-loop {
+    border: 2px dashed #a78bfa; background: rgba(30,27,75,.35);
+    border-radius: 16px; padding: 24px 16px; width: 100%;
+  }
+  .n-loop.blue { border-color: #60a5fa; background: rgba(23,37,84,.3); }
+
+  .lbl { font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: 1.2px; opacity: .65; margin-bottom: 3px; }
+  .ttl { font-weight: 600; font-size: 15px; }
+  .desc { font-size: 12.5px; color: #94a3b8; margin-top: 3px; }
+
+  .arr { width: 2px; height: 32px; background: #475569; position: relative; flex-shrink: 0; }
+  .arr::after {
+    content: ''; position: absolute; bottom: -1px; left: 50%; transform: translateX(-50%);
+    border-left: 6px solid transparent; border-right: 6px solid transparent; border-top: 7px solid #475569;
+  }
+
+  /* ===== Decision Row with Grid ===== */
+  .drow {
+    display: grid;
+    grid-template-columns: 1fr auto 1fr;
+    align-items: start;
+    gap: 0;
+    width: 100%;
+  }
+  /* Center column: decision + continue label */
+  .drow-center {
+    display: flex; flex-direction: column; align-items: center;
+    grid-column: 2;
+  }
+  /* Side exit on the RIGHT */
+  .drow-right {
+    grid-column: 3;
+    display: flex; align-items: center; gap: 0;
+    padding-left: 0;
+    align-self: center;
+  }
+  /* Side exit on the LEFT */
+  .drow-left {
+    grid-column: 1;
+    display: flex; align-items: center; gap: 0;
+    justify-content: flex-end;
+    padding-right: 0;
+    align-self: center;
+  }
+  /* Empty placeholder for grid alignment */
+  .drow-empty { grid-column: 1; }
+  .drow-empty-r { grid-column: 3; }
+
+  /* Horizontal connector line with arrow */
+  .hconn {
+    display: flex; align-items: center; gap: 0; height: 28px;
+  }
+  .hconn-label {
+    font-size: 11px; font-weight: 700; padding: 0 6px; white-space: nowrap;
+  }
+  .hconn-label.yes { color: #4ade80; }
+  .hconn-label.no { color: #f87171; }
+  .hconn-label.ok { color: #60a5fa; }
+  .hconn-line {
+    width: 36px; height: 2px; background: #475569; position: relative; flex-shrink: 0;
+  }
+  /* Arrow right */
+  .hconn-line.ar::after {
+    content: ''; position: absolute; right: -1px; top: 50%; transform: translateY(-50%);
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-left: 7px solid #475569;
+  }
+  /* Arrow left */
+  .hconn-line.al::after {
+    content: ''; position: absolute; left: -1px; top: 50%; transform: translateY(-50%);
+    border-top: 5px solid transparent; border-bottom: 5px solid transparent; border-right: 7px solid #475569;
+  }
+
+  .side-box {
+    display: flex; flex-direction: column; align-items: center; gap: 4px;
+  }
+  .side-box .node { padding: 10px 14px; }
+  .side-box .ttl { font-size: 13px; }
+  .side-box .arr { height: 16px; }
+
+  .cont-label { font-size: 11px; font-weight: 700; margin-top: 6px; }
+  .cont-label.no { color: #f87171; }
+  .cont-label.yes { color: #4ade80; }
+  .cont-label.ok { color: #60a5fa; }
+
+  .loop-hdr { font-size: 12px; font-weight: 700; text-transform: uppercase; letter-spacing: 1px; text-align: center; margin-bottom: 14px; }
+  .loop-hdr.blue { color: #60a5fa; } .loop-hdr.purple { color: #a78bfa; }
+
+  .loop-back {
+    display: flex; align-items: center; justify-content: center; gap: 5px;
+    font-size: 11px; font-weight: 600; margin-top: 8px;
+  }
+  .loop-back.blue { color: #60a5fa; } .loop-back.purple { color: #a78bfa; }
+  .loop-back svg { width: 14px; height: 14px; }
+
+  .retry-back {
+    display: flex; align-items: center; justify-content: center; gap: 4px;
+    font-size: 10px; font-weight: 600; margin-top: 4px;
+  }
+  .retry-back.blue { color: #60a5fa; } .retry-back.purple { color: #a78bfa; }
+  .retry-back svg { width: 12px; height: 12px; }
+
+  .badge {
+    display: inline-block; padding: 2px 8px; border-radius: 20px;
+    font-size: 10px; font-weight: 700; margin: 2px 3px;
+  }
+  .b-green  { background: #052e16; border: 1px solid #4ade80; color: #4ade80; }
+  .b-blue   { background: #172554; border: 1px solid #60a5fa; color: #60a5fa; }
+  .b-purple { background: #312e81; border: 1px solid #a78bfa; color: #a78bfa; }
+  .b-orange { background: #451a03; border: 1px solid #fb923c; color: #fb923c; }
+
+  .cmp {
+    width: 100%; border-collapse: separate; border-spacing: 0;
+    margin-top: 20px; font-size: 13px; border-radius: 12px;
+    overflow: hidden; border: 1px solid #334155;
+  }
+  .cmp th { background: #1e293b; padding: 11px 14px; text-align: left; font-weight: 700; border-bottom: 2px solid #334155; }
+  .cmp td { padding: 9px 14px; border-bottom: 1px solid #1e293b; vertical-align: top; }
+  .cmp tr:last-child td { border-bottom: none; }
+  .cmp tr:nth-child(even) td { background: rgba(30,41,59,.45); }
+</style>
+</head>
+<body>
+
+<h1 class="page-title">Chatbot vs ReAct Agent V1 vs V2</h1>
+<p class="page-sub">Workflow Comparison</p>
+
+<div class="tabs">
+  <button class="tab-btn on-green" onclick="go('chatbot',this,'on-green')">Baseline Chatbot</button>
+  <button class="tab-btn" onclick="go('v1',this,'on-blue')">Agent V1</button>
+  <button class="tab-btn" onclick="go('v2',this,'on-purple')">Agent V2</button>
+  <button class="tab-btn" onclick="go('cmp',this,'on-pink')">So sanh</button>
+</div>
+
+<!-- ============ CHATBOT ============ -->
+<div id="p-chatbot" class="panel active">
+  <div class="toolbar"><button class="btn-save" onclick="dl('d-chatbot','baseline_chatbot_workflow.png',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Save PNG</button>
+  </div>
+  <div id="d-chatbot" class="diagram">
+    <h2 class="c-green">Baseline Chatbot</h2>
+    <p class="sub">Simple LLM Chatbot &mdash; no tools, no reasoning loop</p>
+    <div class="flow">
+      <div class="node n-start"><div class="ttl">User Input</div></div>
+      <div class="arr"></div>
+      <div class="node n-proc">
+        <div class="lbl">System Prompt</div>
+        <div class="ttl">Set System Prompt</div>
+        <div class="desc">"You are a helpful assistant. Answer the user's question directly and concisely."</div>
+      </div>
+      <div class="arr"></div>
+      <div class="node n-llm">
+        <div class="lbl">LLM Call</div>
+        <div class="ttl">Send to LLM</div>
+        <div class="desc">user_input + system_prompt &rarr; LLM &rarr; response</div>
+      </div>
+      <div class="arr"></div>
+      <div class="node n-proc">
+        <div class="lbl">Telemetry</div>
+        <div class="ttl">Log Metrics</div>
+        <div class="desc">provider, model, tokens, latency_ms</div>
+      </div>
+      <div class="arr"></div>
+      <div class="node n-ok" style="max-width:280px">
+        <div class="ttl">Return Response</div>
+        <div class="desc">result["content"] &rarr; user</div>
+      </div>
+      <div class="arr" style="height:20px"></div>
+      <div class="node n-end" style="max-width:180px"><div class="ttl">Done</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ AGENT V1 ============ -->
+<div id="p-v1" class="panel">
+  <div class="toolbar"><button class="btn-save" onclick="dl('d-v1','react_agent_v1_workflow.png',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Save PNG</button>
+  </div>
+  <div id="d-v1" class="diagram">
+    <h2 class="c-blue">ReAct Agent V1</h2>
+    <p class="sub">Basic ReAct Agent &mdash; Thought &bull; Action &bull; Observation loop</p>
+    <div class="flow">
+      <div class="node n-start"><div class="ttl">User Input</div></div>
+      <div class="arr"></div>
+      <div class="node n-proc">
+        <div class="lbl">Initialize</div>
+        <div class="ttl">Build System Prompt &amp; History</div>
+        <div class="desc">Tool descriptions + ReAct format + basic rules</div>
+      </div>
+      <div class="arr"></div>
+
+      <div class="n-loop blue">
+        <div class="loop-hdr blue">ReAct Loop &mdash; max 5 steps</div>
+        <div class="flow">
+
+          <div class="node n-llm">
+            <div class="lbl">Step A</div>
+            <div class="ttl">Send Prompt to LLM</div>
+            <div class="desc">history + system_prompt &rarr; LLM &rarr; response<br>Track tokens &amp; latency</div>
+          </div>
+          <div class="arr"></div>
+
+          <!-- Final Answer? center, YES exit right -->
+          <div class="drow">
+            <div class="drow-empty"></div>
+            <div class="drow-center">
+              <div class="node n-decide">
+                <div class="ttl">&#9670; Final Answer?</div>
+              </div>
+              <div class="cont-label no">&#8595; NO</div>
+            </div>
+            <div class="drow-right">
+              <div class="hconn">
+                <div class="hconn-label yes">YES</div>
+                <div class="hconn-line ar"></div>
+              </div>
+              <div class="side-box">
+                <div class="node n-ok" style="max-width:160px">
+                  <div class="ttl">Return Answer</div>
+                </div>
+                <div class="arr"></div>
+                <div class="node n-end" style="max-width:120px;padding:8px 14px">
+                  <div class="ttl" style="font-size:13px">Done</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="arr"></div>
+
+          <!-- Parse Action? center, FAIL exit left -->
+          <div class="drow">
+            <div class="drow-left">
+              <div class="side-box">
+                <div class="node n-err" style="max-width:160px">
+                  <div class="ttl">Parse Error</div>
+                  <div class="desc">Append hint<br><span class="badge b-orange">No retry limit</span></div>
+                </div>
+                <div class="retry-back blue">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  Step A
+                </div>
+              </div>
+              <div class="hconn">
+                <div class="hconn-line al"></div>
+                <div class="hconn-label no">FAIL</div>
+              </div>
+            </div>
+            <div class="drow-center">
+              <div class="node n-decide">
+                <div class="ttl">&#9670; Parse Action?</div>
+                <div class="desc">tool_name(arg)</div>
+              </div>
+              <div class="cont-label ok">&#8595; OK</div>
+            </div>
+            <div class="drow-empty-r"></div>
+          </div>
+          <div class="arr"></div>
+
+          <!-- Execute Tool -->
+          <div class="node n-tool" style="border-width:3px">
+            <div class="lbl">Step B &mdash; Execute Tool</div>
+            <div class="ttl" style="font-size:16px">Call Tool Function</div>
+            <div class="desc">
+              tool = tools[tool_name] &rarr; observation = tool.function(arg)<br>
+              Tool not found &rarr; error string as observation<br>
+              Exception &rarr; "Error executing ..."<br>
+              <span class="badge b-orange">No hallucination guardrail</span>
+            </div>
+          </div>
+          <div class="arr"></div>
+
+          <div class="node n-proc">
+            <div class="lbl">Step C</div>
+            <div class="ttl">Append to History</div>
+            <div class="desc">Thought + Action + Observation &rarr; history[]</div>
+          </div>
+
+          <div class="loop-back blue" style="margin-top:10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            Next step &rarr; back to Step A
+          </div>
+        </div>
+      </div>
+
+      <div class="arr"></div>
+      <div class="node n-end"><div class="ttl">Max Steps Exceeded</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ AGENT V2 ============ -->
+<div id="p-v2" class="panel">
+  <div class="toolbar"><button class="btn-save" onclick="dl('d-v2','react_agent_v2_workflow.png',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Save PNG</button>
+  </div>
+  <div id="d-v2" class="diagram">
+    <h2 class="c-purple">ReAct Agent V2</h2>
+    <p class="sub">Improved ReAct Agent &mdash; few-shot examples, hallucination guardrails &amp; retry logic</p>
+    <div class="flow">
+      <div class="node n-start"><div class="ttl">User Input</div></div>
+      <div class="arr"></div>
+      <div class="node n-proc">
+        <div class="lbl">Initialize</div>
+        <div class="ttl">Build System Prompt &amp; History</div>
+        <div class="desc">Tool descriptions + ReAct format + <span class="badge b-purple">Few-shot examples</span> + strict rules</div>
+      </div>
+      <div class="arr"></div>
+
+      <div class="n-loop">
+        <div class="loop-hdr purple">ReAct Loop &mdash; max 7 steps</div>
+        <div class="flow">
+
+          <div class="node n-llm">
+            <div class="lbl">Step A</div>
+            <div class="ttl">Send Prompt to LLM</div>
+            <div class="desc">history + system_prompt &rarr; LLM &rarr; response<br>Track tokens &amp; latency</div>
+          </div>
+          <div class="arr"></div>
+
+          <!-- Final Answer? center, YES exit right -->
+          <div class="drow">
+            <div class="drow-empty"></div>
+            <div class="drow-center">
+              <div class="node n-decide">
+                <div class="ttl">&#9670; Final Answer?</div>
+              </div>
+              <div class="cont-label no">&#8595; NO</div>
+            </div>
+            <div class="drow-right">
+              <div class="hconn">
+                <div class="hconn-label yes">YES</div>
+                <div class="hconn-line ar"></div>
+              </div>
+              <div class="side-box">
+                <div class="node n-ok" style="max-width:160px">
+                  <div class="ttl">Return Answer</div>
+                </div>
+                <div class="arr"></div>
+                <div class="node n-end" style="max-width:120px;padding:8px 14px">
+                  <div class="ttl" style="font-size:13px">Done</div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="arr"></div>
+
+          <!-- Parse Action? center, FAIL exit left -->
+          <div class="drow">
+            <div class="drow-left">
+              <div class="side-box">
+                <div class="node n-err" style="max-width:160px">
+                  <div class="ttl">Parse Error</div>
+                  <div class="desc">retries++ &gt; 2?<br>Yes: abort<br>No: hint &amp; retry<br><span class="badge b-purple">Max 2 retries</span></div>
+                </div>
+                <div class="retry-back purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  Step A
+                </div>
+              </div>
+              <div class="hconn">
+                <div class="hconn-line al"></div>
+                <div class="hconn-label no">FAIL</div>
+              </div>
+            </div>
+            <div class="drow-center">
+              <div class="node n-decide">
+                <div class="ttl">&#9670; Parse Action?</div>
+                <div class="desc">tool_name(arg)</div>
+              </div>
+              <div class="cont-label ok">&#8595; OK</div>
+            </div>
+            <div class="drow-empty-r"></div>
+          </div>
+          <div class="arr"></div>
+
+          <!-- Tool exists? center, NO exit left -->
+          <div class="drow">
+            <div class="drow-left">
+              <div class="side-box">
+                <div class="node n-err" style="max-width:160px">
+                  <div class="ttl">Hallucinated Tool</div>
+                  <div class="desc">Append error + available tools list</div>
+                </div>
+                <div class="retry-back purple">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+                  Step A
+                </div>
+              </div>
+              <div class="hconn">
+                <div class="hconn-line al"></div>
+                <div class="hconn-label no">NO</div>
+              </div>
+            </div>
+            <div class="drow-center">
+              <div class="node n-decide">
+                <div class="ttl">&#9670; Tool exists?</div>
+                <div class="desc"><span class="badge b-purple">Guardrail</span></div>
+              </div>
+              <div class="cont-label yes">&#8595; YES</div>
+            </div>
+            <div class="drow-empty-r"></div>
+          </div>
+          <div class="arr"></div>
+
+          <!-- Execute Tool -->
+          <div class="node n-tool" style="border-width:3px">
+            <div class="lbl">Step B &mdash; Execute Tool</div>
+            <div class="ttl" style="font-size:16px">Call Tool Function</div>
+            <div class="desc">
+              tool = tools[tool_name] &rarr; observation = tool.function(arg)<br>
+              Exception &rarr; "Error executing ..."
+            </div>
+          </div>
+          <div class="arr"></div>
+
+          <div class="node n-proc">
+            <div class="lbl">Step C</div>
+            <div class="ttl">Append to History</div>
+            <div class="desc">Thought + Action + Observation &rarr; history[]</div>
+          </div>
+
+          <div class="loop-back purple" style="margin-top:10px">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M1 4v6h6"/><path d="M3.51 15a9 9 0 1 0 2.13-9.36L1 10"/></svg>
+            Next step &rarr; back to Step A
+          </div>
+        </div>
+      </div>
+
+      <div class="arr"></div>
+      <div class="node n-end"><div class="ttl">Max Steps Exceeded</div></div>
+    </div>
+  </div>
+</div>
+
+<!-- ============ COMPARE ============ -->
+<div id="p-cmp" class="panel">
+  <div class="toolbar"><button class="btn-save" onclick="dl('d-cmp','comparison_table.png',this)">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>Save PNG</button>
+  </div>
+  <div id="d-cmp" class="diagram wide">
+    <h2 style="color:#e2e8f0">So sanh 3 Architectures</h2>
+    <p class="sub">Baseline Chatbot vs ReAct Agent V1 vs ReAct Agent V2</p>
+    <table class="cmp">
+      <thead><tr>
+        <th style="width:150px">Feature</th>
+        <th><span class="badge b-green">Chatbot</span></th>
+        <th><span class="badge b-blue">Agent V1</span></th>
+        <th><span class="badge b-purple">Agent V2</span></th>
+      </tr></thead>
+      <tbody>
+        <tr><td><b>Architecture</b></td><td>Single LLM call</td><td>ReAct loop</td><td>ReAct loop</td></tr>
+        <tr><td><b>Tool Access</b></td><td>None</td><td>Yes</td><td>Yes</td></tr>
+        <tr><td><b>Max Steps</b></td><td>1</td><td>5</td><td>7</td></tr>
+        <tr><td><b>Few-shot Examples</b></td><td>None</td><td>None</td><td style="color:#4ade80">Yes</td></tr>
+        <tr><td><b>Action Parsing</b></td><td>N/A</td><td>Basic regex</td><td>Improved + quote strip</td></tr>
+        <tr><td><b>Parse Error Handling</b></td><td>N/A</td><td style="color:#fb923c">No retry limit</td><td style="color:#4ade80">Max 2 retries then abort</td></tr>
+        <tr><td><b>Hallucination Guard</b></td><td>N/A</td><td style="color:#fb923c">None</td><td style="color:#4ade80">Pre-execution check</td></tr>
+        <tr><td><b>Error Recovery</b></td><td>None</td><td>Basic error string</td><td>Guided re-prompt + tool list</td></tr>
+        <tr><td><b>System Prompt</b></td><td>Generic</td><td>Tools + rules</td><td>Tools + rules + example</td></tr>
+        <tr><td><b>Observability</b></td><td>Basic log</td><td>Trace + log</td><td>Trace + log + error types</td></tr>
+        <tr><td><b>Complexity</b></td><td style="color:#4ade80">Low</td><td style="color:#60a5fa">Medium</td><td style="color:#a78bfa">High</td></tr>
+        <tr><td><b>Robustness</b></td><td style="color:#fb923c">Low</td><td style="color:#fb923c">Medium</td><td style="color:#4ade80">High</td></tr>
+      </tbody>
+    </table>
+  </div>
+</div>
+
+<script>
+function go(id, btn, cls) {
+  document.querySelectorAll('.panel').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.className = 'tab-btn');
+  document.getElementById('p-' + id).classList.add('active');
+  btn.classList.add(cls);
+}
+function dl(id, name, btn) {
+  const orig = btn.innerHTML;
+  btn.textContent = 'Rendering...'; btn.disabled = true;
+  html2canvas(document.getElementById(id), { backgroundColor: '#0f172a', scale: 2, useCORS: true }).then(c => {
+    const a = document.createElement('a');
+    a.download = name; a.href = c.toDataURL('image/png'); a.click();
+    btn.innerHTML = orig; btn.disabled = false;
+  });
+}
+</script>
+</body>
+</html>
