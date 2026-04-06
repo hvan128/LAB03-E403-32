@@ -1,4 +1,15 @@
+import os
+import sys
 from typing import Optional
+from dotenv import load_dotenv
+
+load_dotenv(override=True)
+
+if __package__ is None or __package__ == "":
+    sys.path.append(
+        os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    )
+
 from src.core.llm_provider import LLMProvider
 from src.telemetry.logger import logger
 from src.telemetry.metrics import tracker
@@ -35,3 +46,36 @@ class Chatbot:
         })
 
         return result["content"]
+
+
+def run_openai_chatbot() -> None:
+
+
+    from src.core.openai_provider import OpenAIProvider
+
+    api_key = os.getenv("OPENAI_API_KEY")
+    if not api_key or api_key == "your_openai_api_key_here":
+        raise ValueError("OPENAI_API_KEY is missing in `.env`.")
+
+    model_name = os.getenv("DEFAULT_MODEL", "gpt-4o")
+    chatbot = Chatbot(OpenAIProvider(model_name=model_name, api_key=api_key))
+
+    print(f"OpenAI chatbot is ready ({model_name}). Type 'quit' to exit.")
+
+    while True:
+        user_input = input("You: ").strip()
+        if not user_input:
+            continue
+        if user_input.lower() in {"quit", "exit"}:
+            print("Goodbye!")
+            break
+
+        try:
+            answer = chatbot.run(user_input)
+            print(f"Assistant: {answer}\n")
+        except Exception as e:
+            print(f"Error: {e}\n")
+
+
+if __name__ == "__main__":
+    run_openai_chatbot()
