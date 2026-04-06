@@ -157,7 +157,7 @@ def run_interactive(start_mode: str = "v2"):
             print(f"\nError: {e}\n")
 
 
-def run_single_query(query: str, mode: str | None = None):
+def run_single_query(query: str, mode: str = None):
     systems = build_systems()
 
     print(f"Query: {query}\n")
