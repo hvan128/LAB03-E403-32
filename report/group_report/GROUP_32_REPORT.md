@@ -1,7 +1,9 @@
 # Báo cáo Nhóm: Lab 3 - Hệ thống Agentic đạt mức Production
 
 - **Tên nhóm**: `E403-32 Product Comparison Assistant`
-- **Thành viên nhóm**: `[Cập nhật đầy đủ họ tên thành viên]`
+- **Thành viên nhóm**: `2A202600280 - Phan Thanh Sang `
+                       `2A202600362 - Đỗ Minh Hiếu `
+                       `2A202600495 - Trần Đình Minh Vương` `2A202600386 - Ngô Hải Văn`
 - **Ngày triển khai**: `2026-04-06`
 
 ---
