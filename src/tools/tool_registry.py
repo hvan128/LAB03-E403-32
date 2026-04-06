@@ -20,7 +20,16 @@ TOOLS = [
     },
     {
         "name": "price_calculator",
-        "description": "Tính giá: giảm giá ('22990000 discount 15%'), quy đổi tiền ('22990000 to usd'), hoặc biểu thức ('22990000 / 8')",
+        "description": (
+            "Tính giá sản phẩm. Các format hỗ trợ:\n"
+            "- Giảm giá: '34990000 discount 20%' → giá sau giảm\n"
+            "- Trả góp: '34990000 installment 12 months 1.5%' → tiền/tháng\n"
+            "- So sánh giá/hiệu năng: '15990000/8 vs 22990000/16' → cái nào rẻ hơn/đơn vị\n"
+            "- Quy đổi tiền: '34990000 to usd' → đổi sang ngoại tệ\n"
+            "- Biểu thức: '34990000 / 8' → tính toán tự do\n"
+            "LƯU Ý: Nếu người dùng hỏi giá sản phẩm cụ thể (ví dụ 'iPhone 15 Pro Max discount 20%'), "
+            "hãy dùng product_search TRƯỚC để lấy giá gốc, rồi mới gọi price_calculator với giá đó."
+        ),
         "arg_name": "expression",
         "function": price_calculator,
     },
