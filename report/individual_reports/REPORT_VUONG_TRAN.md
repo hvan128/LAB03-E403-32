@@ -11,6 +11,7 @@
 ### Modules Implemented
 
 - `src/tools/price_calculator.py`
+- `src/telemetry/metrics.py`
 - `scripts/analyze_logs.py`
 
 ### Code Highlights
@@ -60,17 +61,39 @@ def get_exchange_rates() -> dict:
     # cache 1h, fallback về dict tĩnh nếu lỗi
 ```
 
-**4. Metrics mở rộng trong `analyze_logs.py`**
+**4. Real pricing trong `metrics.py`**
 
-- Cost breakdown theo provider
-- Token ratio (prompt vs completion)
-- Success rate theo loại câu hỏi (`question_type`)
+Thay thế dummy cost `0.01/1k tokens` bằng pricing thật theo từng model:
+
+```python
+PRICING = {
+    "gpt-4o":            {"prompt": 2.50,  "completion": 10.00},
+    "gpt-4o-mini":       {"prompt": 0.15,  "completion": 0.60},
+    "gemini-1.5-pro":    {"prompt": 1.25,  "completion": 5.00},
+    "claude-3-5-sonnet": {"prompt": 3.00,  "completion": 15.00},
+    ...
+}
+prompt_cost = usage["prompt_tokens"] / 1_000_000 * pricing["prompt"]
+completion_cost = usage["completion_tokens"] / 1_000_000 * pricing["completion"]
+```
 
 **5. Metrics mở rộng trong `analyze_logs.py`**
 
 - Cost breakdown theo provider
 - Token ratio (prompt vs completion)
-- Success rate theo loại câu hỏi (`question_type`)
+- Loop count + step distribution
+- Failure analysis (parse error, hallucination, timeout)
+- Bảng so sánh Chatbot vs Agent:
+
+```
+CHATBOT vs AGENT COMPARISON
+  Metric                         Chatbot        Agent
+  Requests                             6            4
+  Avg Latency (ms)                  4080         1480
+  Avg Tokens                         335          579
+  Total Cost ($)                  0.0201       0.0232
+  Avg Cost/req ($)                0.0033       0.0058
+```
 
 ### Documentation
 
