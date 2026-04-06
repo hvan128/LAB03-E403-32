@@ -1,5 +1,5 @@
 """
-Main runner: Chatbot vs Agent v1 vs Agent v2 comparison.
+Main runner: Chatbot vs Agent v1 vs Agent v2 — Trợ lý So sánh Sản phẩm.
 
 Usage:
     python main.py                     # Interactive mode
@@ -44,17 +44,20 @@ def create_llm():
         raise ValueError(f"Unknown provider: {provider}")
 
 
+# Test cases cho đề tài So sánh Sản phẩm
 TEST_CASES = [
-    # Simple factual (chatbot should handle)
-    "What is the capital of France?",
-    # Requires tool (weather)
-    "What is the weather in Hanoi right now?",
-    # Requires tool (calculator)
-    "What is 1234 * 5678?",
-    # Multi-step: needs search + calculator
-    "What is the population of Vietnam? Multiply it by 2.",
-    # Multi-step: weather + calculator
-    "What is the temperature in Tokyo? Convert it from Celsius to Fahrenheit.",
+    # Simple — chatbot có thể trả lời
+    "iPhone 15 có những thông số gì?",
+    # Cần 1 tool
+    "Tìm cho tôi các laptop có sẵn",
+    # Cần product_compare
+    "So sánh iPhone 15 và Samsung Galaxy S24",
+    # Multi-step: search + price_calculator
+    "iPhone 15 Pro Max giảm giá 20%, giá còn bao nhiêu?",
+    # Multi-step: compare + calculator
+    "So sánh MacBook Air M2 và Dell XPS 13, cái nào rẻ hơn bao nhiêu tiền?",
+    # Complex multi-step
+    "Samsung S24 Ultra giá bao nhiêu USD? So sánh với iPhone 15 Pro Max xem cái nào đắt hơn?",
 ]
 
 
@@ -73,52 +76,34 @@ def run_comparison():
 
         row = {"query": query}
 
-        # Chatbot
-        print("\n--- Chatbot ---")
-        try:
-            cb_answer = chatbot.run(query)
-            print(f"Answer: {cb_answer[:200]}")
-            row["chatbot"] = cb_answer
-        except Exception as e:
-            print(f"Error: {e}")
-            row["chatbot"] = f"ERROR: {e}"
-
-        # Agent v1
-        print("\n--- Agent v1 ---")
-        try:
-            v1_answer = agent_v1.run(query)
-            print(f"Answer: {v1_answer[:200]}")
-            row["agent_v1"] = v1_answer
-        except Exception as e:
-            print(f"Error: {e}")
-            row["agent_v1"] = f"ERROR: {e}"
-
-        # Agent v2
-        print("\n--- Agent v2 ---")
-        try:
-            v2_answer = agent_v2.run(query)
-            print(f"Answer: {v2_answer[:200]}")
-            row["agent_v2"] = v2_answer
-        except Exception as e:
-            print(f"Error: {e}")
-            row["agent_v2"] = f"ERROR: {e}"
+        for name, system in [("chatbot", chatbot), ("agent_v1", agent_v1), ("agent_v2", agent_v2)]:
+            print(f"\n--- {name.upper()} ---")
+            try:
+                answer = system.run(query)
+                print(f"Answer: {answer[:300]}")
+                row[name] = answer
+            except Exception as e:
+                print(f"Error: {e}")
+                row[name] = f"ERROR: {e}"
 
         results.append(row)
 
     # Save results
     os.makedirs("logs", exist_ok=True)
-    with open("logs/comparison_results.json", "w") as f:
+    with open("logs/comparison_results.json", "w", encoding="utf-8") as f:
         json.dump(results, f, indent=2, ensure_ascii=False)
 
     # Print metrics summary
     print(f"\n{'='*70}")
     print("METRICS SUMMARY")
     print("="*70)
-    for m in tracker.session_metrics:
-        print(json.dumps(m, indent=2))
-
-    print(f"\nTotal requests tracked: {len(tracker.session_metrics)}")
-    print(f"Results saved to logs/comparison_results.json")
+    total_cost = sum(m.get("cost_estimate", 0) for m in tracker.session_metrics)
+    total_tokens = sum(m.get("total_tokens", 0) for m in tracker.session_metrics)
+    print(f"Total requests: {len(tracker.session_metrics)}")
+    print(f"Total tokens: {total_tokens:,}")
+    print(f"Estimated cost: ${total_cost:.4f}")
+    print(f"\nResults saved to logs/comparison_results.json")
+    print(f"Run 'python scripts/analyze_logs.py' for detailed analysis.")
 
 
 def run_interactive():
@@ -127,7 +112,7 @@ def run_interactive():
     agent_v1 = ReActAgent(llm, TOOLS, max_steps=5)
     agent_v2 = ReActAgentV2(llm, TOOLS, max_steps=7)
 
-    print("Lab 3: Chatbot vs ReAct Agent")
+    print("=== Trợ lý So sánh Sản phẩm ===")
     print("Commands: 'quit' to exit, 'mode <chatbot|v1|v2>' to switch")
     print(f"Provider: {os.getenv('DEFAULT_PROVIDER', 'openai')}")
     print()
@@ -175,7 +160,7 @@ def run_single_query(query: str):
 
 
 if __name__ == "__main__":
-    parser = argparse.ArgumentParser(description="Lab 3: Chatbot vs ReAct Agent")
+    parser = argparse.ArgumentParser(description="Lab 3: Trợ lý So sánh Sản phẩm")
     parser.add_argument("--compare", action="store_true", help="Run comparison on test cases")
     parser.add_argument("--query", type=str, help="Run a single query on all systems")
     args = parser.parse_args()
