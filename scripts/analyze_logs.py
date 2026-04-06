@@ -43,6 +43,8 @@ def analyze(events: list):
     agent_steps = []
     cost_by_provider = defaultdict(float)
     question_results = defaultdict(lambda: {"success": 0, "total": 0})
+    step_distributions = []   # số steps mỗi agent run
+    termination_status = defaultdict(int)  # success / max_steps_exceeded / etc.
 
     for e in events:
         event_type = e.get("event", "")
@@ -65,12 +67,16 @@ def analyze(events: list):
             errors["hallucination"] += 1
 
         elif event_type in ("AGENT_V1_END", "AGENT_V2_END"):
-            agent_steps.append(data.get("steps", 0))
-            if data.get("status") == "max_steps_exceeded":
+            steps = data.get("steps", 0)
+            agent_steps.append(steps)
+            step_distributions.append(steps)
+            status = data.get("status", "unknown")
+            termination_status[status] += 1
+            if status == "max_steps_exceeded":
                 errors["timeout"] += 1
             q_type = data.get("question_type", "unknown")
             question_results[q_type]["total"] += 1
-            if data.get("status") == "success":
+            if status == "success":
                 question_results[q_type]["success"] += 1
 
     # Print results
@@ -108,18 +114,34 @@ def analyze(events: list):
                 print(f"    {provider}: ${cost:.4f}")
 
     if agent_steps:
-        print(f"\n--- Agent Steps ---")
+        print(f"\n--- Agent Steps (Loop Count) ---")
         print(f"  Total agent runs: {len(agent_steps)}")
-        print(f"  Avg steps: {sum(agent_steps)/len(agent_steps):.1f}")
+        print(f"  Avg steps per run: {sum(agent_steps)/len(agent_steps):.1f}")
         print(f"  Max steps: {max(agent_steps)}")
+        print(f"  Min steps: {min(agent_steps)}")
+        # Phân bố số steps
+        dist = defaultdict(int)
+        for s in step_distributions:
+            dist[s] += 1
+        print(f"  Step distribution:")
+        for k in sorted(dist):
+            bar = "█" * dist[k]
+            print(f"    {k} step(s): {dist[k]:>3}x  {bar}")
+        # Termination quality
+        print(f"\n--- Termination Quality ---")
+        total_runs = len(agent_steps)
+        for status, count in sorted(termination_status.items(), key=lambda x: -x[1]):
+            pct = count / total_runs * 100
+            label = "✓" if status == "success" else "✗"
+            print(f"  {label} {status}: {count}/{total_runs} ({pct:.1f}%)")
 
-    print(f"\n--- Errors ---")
-    print(f"  Parse errors: {errors['parse_error']}")
-    print(f"  Hallucinations: {errors['hallucination']}")
-    print(f"  Timeouts: {errors['timeout']}")
+    print(f"\n--- Failure Analysis ---")
+    print(f"  JSON Parse errors  : {errors['parse_error']:>4}  (LLM output wrong Action format)")
+    print(f"  Hallucination errors: {errors['hallucination']:>3}  (LLM called non-existent tool)")
+    print(f"  Timeouts           : {errors['timeout']:>4}  (exceeded max_steps)")
     total_runs = len(agent_steps) if agent_steps else 1
     total_errors = sum(errors.values())
-    print(f"  Error rate: {total_errors/total_runs*100:.1f}%")
+    print(f"  Total errors: {total_errors}  |  Error rate: {total_errors/total_runs*100:.1f}%")
 
     if question_results:
         print(f"\n--- Success Rate by Question Type ---")
