@@ -7,13 +7,46 @@ Hỗ trợ các phép tính:
 - expression: "22990000 / 8" → tính giá/GB RAM, v.v.
 """
 
-# TODO [Vương Trần]: Cập nhật tỷ giá nếu cần
-EXCHANGE_RATES = {
-    "usd": 25_000,
-    "eur": 27_000,
-    "jpy": 170,
-    "krw": 19,
+import urllib.request
+import json
+import time
+
+# Fallback nếu không fetch được
+_FALLBACK_RATES = {
+    "usd": 25_400,
+    "eur": 27_800,
+    "jpy": 165,
+    "krw": 18,
+    "gbp": 32_000,
+    "cny": 3_500,
 }
+
+_rate_cache = {"rates": None, "ts": 0}
+_CACHE_TTL = 3600  # 1 giờ
+
+
+def get_exchange_rates() -> dict:
+    """Lấy tỷ giá VND realtime từ exchangerate-api.com (free, no key)."""
+    now = time.time()
+    if _rate_cache["rates"] and now - _rate_cache["ts"] < _CACHE_TTL:
+        return _rate_cache["rates"]
+    try:
+        url = "https://open.er-api.com/v6/latest/VND"
+        with urllib.request.urlopen(url, timeout=5) as resp:
+            data = json.loads(resp.read())
+        if data.get("result") != "success":
+            raise ValueError("API error")
+        raw = data["rates"]  # raw[currency] = số đơn vị ngoại tệ / 1 VND
+        # Đổi thành: 1 ngoại tệ = ? VND
+        rates = {k.lower(): round(1 / v) for k, v in raw.items() if v > 0}
+        _rate_cache["rates"] = rates
+        _rate_cache["ts"] = now
+        return rates
+    except Exception:
+        return {k: v for k, v in _FALLBACK_RATES.items()}
+
+
+EXCHANGE_RATES = _FALLBACK_RATES  # dùng khi import tĩnh, runtime dùng get_exchange_rates()
 
 
 def price_calculator(expression: str) -> str:
@@ -103,9 +136,10 @@ def price_calculator(expression: str) -> str:
             parts = expr.split(" to ")
             price = float(parts[0].strip().replace(",", ""))
             currency = parts[1].strip()
-            rate = EXCHANGE_RATES.get(currency)
+            rates = get_exchange_rates()
+            rate = rates.get(currency)
             if not rate:
-                return f"Unknown currency '{currency}'. Available: {', '.join(EXCHANGE_RATES.keys())}"
+                return f"Unknown currency '{currency}'. Available: {', '.join(sorted(rates.keys()))}"
             converted = price / rate
             return f"{price:,.0f} VND = {converted:,.2f} {currency.upper()} (rate: 1 {currency.upper()} = {rate:,} VND)"
         except Exception as e:
