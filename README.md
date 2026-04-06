@@ -46,6 +46,39 @@ LOCAL_MODEL_PATH=./models/Phi-3-mini-4k-instruct-q4.gguf
 5.  **Grading & Bonus**: Follow the [SCORING.md](file:///Users/tindt/personal/ai-thuc-chien/day03-lab-agent/SCORING.md) to maximize your points and explore bonus metrics.
 
 ## 🛠️ How to Use This Baseline
+### Streamlit UI
+Launch the web UI with:
+
+```bash
+streamlit run streamlit_app.py
+```
+
+In the sidebar, you can choose:
+- `chatbot` → Baseline Chatbot
+- `v1` → ReAct Agent v1
+- `v2` → ReAct Agent v2
+
+You can also enable **So sánh cả 3 chế độ** to compare all outputs side by side.
+
+### Terminal UI
+You can launch three modes from the terminal UI with a flag:
+
+```bash
+python main.py --mode chatbot   # Baseline chatbot
+python main.py --mode v1        # ReAct Agent v1
+python main.py --mode v2        # ReAct Agent v2
+```
+
+While the app is running, use:
+
+```bash
+mode chatbot
+mode v1
+mode v2
+```
+
+to switch between the three systems.
+
 The code is designed as a **Production Prototype**. It includes:
 - **Telemetry**: Every action is logged in JSON format for later analysis.
 - **Robust Provider Pattern**: Easily extendable to any LLM API.

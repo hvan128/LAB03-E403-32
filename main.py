@@ -1,10 +1,12 @@
 """
-Main runner: Chatbot vs Agent v1 vs Agent v2 — Trợ lý So sánh Sản phẩm.
+Main runner: Baseline Chatbot vs ReAct Agent v1 vs ReAct Agent v2.
 
 Usage:
-    python main.py                     # Interactive mode
+    python main.py --mode chatbot      # Interactive baseline chatbot
+    python main.py --mode v1           # Interactive ReAct Agent v1
+    python main.py --mode v2           # Interactive ReAct Agent v2
     python main.py --compare           # Run predefined test cases and compare
-    python main.py --query "question"  # Single query on all 3 systems
+    python main.py --query "question"  # Run one query using the selected mode
 """
 
 import os
@@ -60,12 +62,27 @@ TEST_CASES = [
     "Samsung S24 Ultra giá bao nhiêu USD? So sánh với iPhone 15 Pro Max xem cái nào đắt hơn?",
 ]
 
+MODE_LABELS = {
+    "chatbot": "Baseline Chatbot",
+    "v1": "ReAct Agent v1",
+    "v2": "ReAct Agent v2",
+}
+
+
+def build_systems():
+    llm = create_llm()
+    return {
+        "chatbot": Chatbot(llm),
+        "v1": ReActAgent(llm, TOOLS, max_steps=5),
+        "v2": ReActAgentV2(llm, TOOLS, max_steps=7),
+    }
+
 
 def run_comparison():
-    llm = create_llm()
-    chatbot = Chatbot(llm)
-    agent_v1 = ReActAgent(llm, TOOLS, max_steps=5)
-    agent_v2 = ReActAgentV2(llm, TOOLS, max_steps=7)
+    systems = build_systems()
+    chatbot = systems["chatbot"]
+    agent_v1 = systems["v1"]
+    agent_v2 = systems["v2"]
 
     results = []
 
@@ -106,19 +123,17 @@ def run_comparison():
     print(f"Run 'python scripts/analyze_logs.py' for detailed analysis.")
 
 
-def run_interactive():
-    llm = create_llm()
-    chatbot = Chatbot(llm)
-    agent_v1 = ReActAgent(llm, TOOLS, max_steps=5)
-    agent_v2 = ReActAgentV2(llm, TOOLS, max_steps=7)
+def run_interactive(start_mode: str = "v2"):
+    systems = build_systems()
 
-    print("=== Trợ lý So sánh Sản phẩm ===")
+    print("Lab 3: Chatbot vs ReAct Agent")
+    print("Available modes: chatbot (baseline), v1 (ReAct v1), v2 (ReAct v2)")
     print("Commands: 'quit' to exit, 'mode <chatbot|v1|v2>' to switch")
     print(f"Provider: {os.getenv('DEFAULT_PROVIDER', 'openai')}")
     print()
 
-    mode = "v2"
-    systems = {"chatbot": chatbot, "v1": agent_v1, "v2": agent_v2}
+    mode = start_mode if start_mode in systems else "v2"
+    print(f"Starting mode: {mode} - {MODE_LABELS[mode]}")
 
     while True:
         user_input = input(f"[{mode}] You: ").strip()
@@ -142,18 +157,24 @@ def run_interactive():
             print(f"\nError: {e}\n")
 
 
-def run_single_query(query: str):
-    llm = create_llm()
-    chatbot = Chatbot(llm)
-    agent_v1 = ReActAgent(llm, TOOLS, max_steps=5)
-    agent_v2 = ReActAgentV2(llm, TOOLS, max_steps=7)
+def run_single_query(query: str, mode: str | None = None):
+    systems = build_systems()
 
     print(f"Query: {query}\n")
 
-    for name, system in [("Chatbot", chatbot), ("Agent v1", agent_v1), ("Agent v2", agent_v2)]:
-        print(f"--- {name} ---")
+    if mode:
+        print(f"--- {MODE_LABELS[mode]} ---")
         try:
-            answer = system.run(query)
+            answer = systems[mode].run(query)
+            print(f"Answer: {answer}\n")
+        except Exception as e:
+            print(f"Error: {e}\n")
+        return
+
+    for key in ["chatbot", "v1", "v2"]:
+        print(f"--- {MODE_LABELS[key]} ---")
+        try:
+            answer = systems[key].run(query)
             print(f"Answer: {answer}\n")
         except Exception as e:
             print(f"Error: {e}\n")
@@ -162,12 +183,18 @@ def run_single_query(query: str):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description="Lab 3: Trợ lý So sánh Sản phẩm")
     parser.add_argument("--compare", action="store_true", help="Run comparison on test cases")
-    parser.add_argument("--query", type=str, help="Run a single query on all systems")
+    parser.add_argument("--query", type=str, help="Run a single query")
+    parser.add_argument(
+        "--mode",
+        choices=["chatbot", "v1", "v2"],
+        default="v2",
+        help="Choose which UI mode to start: baseline chatbot, ReAct v1, or ReAct v2",
+    )
     args = parser.parse_args()
 
     if args.compare:
         run_comparison()
     elif args.query:
-        run_single_query(args.query)
+        run_single_query(args.query, mode=args.mode)
     else:
-        run_interactive()
+        run_interactive(start_mode=args.mode)
